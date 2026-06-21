@@ -1,0 +1,13 @@
+εισαγωγη thesis
+notebook LM < oxi gia tosa data
+pros --> oxi cloud, kai ara private ta data
+
+
+ανταγωνισμος/ερευνα αγορας
+kri kri model rag
+gemma rag
+streamlit
+fais db
+qdrant
+https://notebooklm.google/
+http://aiforelke.iee.ihu.gr/

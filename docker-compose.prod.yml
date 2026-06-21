@@ -1,0 +1,22 @@
+services:
+  # Pull pre-built viewer image instead of building locally
+  streamlit:
+    image: reg.dchasanidis.com/recall-viewer:latest
+    build: !reset null
+
+  # Scraper / extractor — batch job, only starts with `jobs` profile
+  scraper:
+    image: reg.dchasanidis.com/recall-scraper:latest
+    container_name: recall-scraper
+    restart: "no"
+    environment:
+      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+    volumes:
+      - ./pdfs:/app/pdfs
+      - ./logs:/app/logs
+    networks:
+      - backend
+    depends_on:
+      - postgres
+    profiles:
+      - jobs

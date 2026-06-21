@@ -1,4 +1,5 @@
 services:
+  # ── Observability ──────────────────────────────────────────────
   loki:
     image: grafana/loki:2.9.8
     container_name: loki
@@ -30,10 +31,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Starter defaults; change these for anything public-facing
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      # Optional: disable sign-up
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
@@ -44,10 +43,46 @@ services:
     depends_on:
       - loki
 
+  # ── Database ───────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: parliament
+      POSTGRES_USER: parliament
+      POSTGRES_PASSWORD: parliament
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - backend
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@parliament.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - backend
+    depends_on:
+      - postgres
+
 networks:
   observability:
+  backend:
 
 volumes:
   loki-data:
   promtail_positions:
   grafana-data:
+  postgres-data:
+  pgadmin-data:

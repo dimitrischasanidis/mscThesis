@@ -1,0 +1,10 @@
+services:
+  loki:
+    ports:
+      - "3101:3100"
+  grafana:
+    ports:
+      - "3001:3000"
+  postgres:
+    ports:
+      - "5434:5432"

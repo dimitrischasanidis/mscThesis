@@ -1,0 +1,49 @@
+name: Deploy to barad-dur
+
+on:
+  workflow_run:
+    workflows: ["Build & Push Images"]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: reg.dchasanidis.com
+  DEPLOY_DIR: ~/mscThesis
+  COMPOSE: docker compose -f docker-compose.yaml -f docker-compose.server.yml -f docker-compose.prod.yml
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: [self-hosted, barad-dur]
+    # Only deploy when the build succeeded (not on failure/cancelled)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout (update compose files on server)
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.DEPLOY_DIR }}
+
+      - name: Log in to registry
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | \
+            docker login ${{ env.REGISTRY }} \
+              -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Pull new images
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: ${{ env.COMPOSE }} pull streamlit
+
+      - name: Recreate viewer
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: ${{ env.COMPOSE }} up -d --no-build streamlit
+
+      - name: Verify
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          sleep 5
+          ${{ env.COMPOSE }} ps streamlit
+          docker exec streamlit wget -qO- http://localhost:8501/healthz || echo "healthz not available — check logs"

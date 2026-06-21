@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+pdfs/
+logs/
+*.sql.gz
+data_*.csv
+data_*.jsonl
+node_modules/
+.idea/
+.git/
+streamlit_app/
+.github/

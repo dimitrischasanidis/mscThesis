@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Data (large, not versioned)
+data/
+pdfs/
+*.sql.gz
+
+# Logs
+logs/*.jsonl
+logs/*.jsonl.zip
+logs/*.log
+logs/checkpoint_*.json
+logs/pcm_ids_*.txt
+logs/visited_pages.csv
+logs/scraper.*.zip
+
+# Bulk exports
+data_*.csv
+data_*.jsonl
+
+# Node (accidental npm init)
+node_modules/
+package.json
+package-lock.json
+
+# IDE
+.idea/
+
+# Env / secrets
+.env
+.env.*

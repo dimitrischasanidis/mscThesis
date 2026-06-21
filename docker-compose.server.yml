@@ -1,0 +1,45 @@
+services:
+  grafana:
+    deploy:
+      replicas: 0
+
+  loki:
+    networks:
+      - observability
+      - barad-dur-monitoring_default
+
+  promtail:
+    networks:
+      - observability
+
+  postgres:
+    networks:
+      - backend
+
+  pgadmin:
+    networks:
+      - backend
+
+  # ── Data viewer ────────────────────────────────────────────────
+  streamlit:
+    build: ./streamlit_app
+    container_name: streamlit
+    restart: unless-stopped
+    environment:
+      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      PDF_CACHE_DIR: "/app/static"
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./streamlit_app:/app
+      - ./pdfs:/app/static
+    networks:
+      - backend
+    depends_on:
+      - postgres
+
+networks:
+  barad-dur-monitoring_default:
+    external: true
+  observability:
+  backend:

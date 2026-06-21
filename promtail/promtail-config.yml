@@ -17,3 +17,26 @@ scrape_configs:
           job: host-python-scraper
           app: parliament-scraper
           __path__: /var/log/parliament-scraper/*.jsonl
+
+    pipeline_stages:
+      # Parse loguru's serialize=True JSONL format
+      - json:
+          expressions:
+            level: 'record.level.name'
+            message: 'record.message'
+            function: 'record.function'
+            ts_unix: 'record.time.timestamp'
+
+      # Use loguru's own timestamp (not ingestion time)
+      - timestamp:
+          source: ts_unix
+          format: Unix
+
+      # Promote level as a Loki label for fast filtering
+      # e.g. {job="host-python-scraper", level="ERROR"}
+      - labels:
+          level:
+
+      # Replace raw JSON blob with the clean message as log line
+      - output:
+          source: message
