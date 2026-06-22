@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: reg.dchasanidis.com
-  DEPLOY_DIR: ~/mscThesis
+  DEPLOY_DIR: /home/dimitris/mscThesis
   COMPOSE: >-
     docker compose
     --project-directory .
