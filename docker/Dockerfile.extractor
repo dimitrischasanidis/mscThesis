@@ -1,13 +1,24 @@
-FROM python:3.12-slim
+FROM nvidia/cuda:12.8.0-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      tesseract-ocr \
-      tesseract-ocr-ell \
-      tesseract-ocr-eng \
+      python3.12 \
+      python3.12-dev \
+      python3-pip \
       poppler-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Use python3.12 as default python
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+ && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+# Torch cu128 must be installed before surya-ocr so it picks up the GPU build
+RUN pip install --no-cache-dir \
+      torch \
+      --index-url https://download.pytorch.org/whl/cu128
 
 COPY requirements/extractor.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt

@@ -16,8 +16,25 @@ services:
       - ./streamlit_app:/app
       - ./pdfs:/app/static
 
+  # Extractor: GPU access + persistent Surya model cache
+  extractor:
+    environment:
+      TORCH_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+
 networks:
   barad-dur-monitoring_default:
     external: true
   observability:
   backend:
+
+volumes:
+  hf-cache:

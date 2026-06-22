@@ -3,8 +3,8 @@
 PDF text extractor — always-on loop.
 
 Reads PDFs from disk (written by downloader.py), extracts text with pdfminer,
-falls back to OCR (tesseract via pytesseract) for scanned/image-only PDFs, and
-stores the results in Postgres.
+falls back to OCR (Surya on GPU) for scanned/image-only PDFs, and stores
+results in Postgres.
 
 Coordination with downloader.py (file-existence protocol):
   pdfs/<sha1>.pdf        → extract text (pdfminer → OCR if empty)
@@ -16,6 +16,7 @@ Environment variables:
   PDF_CACHE_DIR     Local PDF cache directory (default: pdfs)
   POLL_INTERVAL_S   Seconds to sleep when no pending work (default: 60)
   BATCH_SIZE        Records fetched per DB query (default: 50)
+  TORCH_DEVICE      Device for Surya OCR: 'cuda' or 'cpu' (default: cpu)
 """
 
 from __future__ import annotations
@@ -40,13 +41,32 @@ except ImportError:
 
 try:
     import PIL.Image
-    import pytesseract
     from pdf2image import convert_from_path
     PIL.Image.MAX_IMAGE_PIXELS = None  # suppress DecompressionBombWarning for large scans
-    _OCR_OK = True
+    _PDF2IMAGE_OK = True
 except ImportError:
-    _OCR_OK = False
-    logger.warning("pytesseract/pdf2image not installed — OCR fallback unavailable")
+    _PDF2IMAGE_OK = False
+    logger.warning("pdf2image/Pillow not installed — OCR unavailable")
+
+# Surya OCR — GPU-accelerated, multilingual (includes Greek)
+_OCR_OK = False
+_det_predictor = None
+_rec_predictor = None
+
+if _PDF2IMAGE_OK:
+    try:
+        from surya.recognition import RecognitionPredictor
+        from surya.detection import DetectionPredictor
+
+        _device = os.environ.get("TORCH_DEVICE", "cpu")
+        logger.info("Loading Surya OCR models on device={}", _device)
+        _det_predictor = DetectionPredictor()
+        _rec_predictor = RecognitionPredictor()
+        _OCR_OK = True
+        logger.info("Surya OCR models loaded — OCR fallback active on device={}", _device)
+    except Exception as _surya_err:
+        logger.warning("Surya OCR unavailable ({}): {}", type(_surya_err).__name__, _surya_err)
+        logger.warning("Records with scanned PDFs will log errors to pdf_extraction_errors")
 
 from shared import (
     PDF_CACHE_DIR,
@@ -59,8 +79,15 @@ from shared import (
 POLL_INTERVAL_S = int(os.environ.get("POLL_INTERVAL_S", "60"))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "50"))
 
-SELECT_SQL = """
-SELECT pcm_id, question_pdfs, answer_pdfs
+# Newest-first: parse DD/MM/YYYY with a regex guard so malformed dates sort last
+_DATE_ORDER = r"""
+    CASE WHEN date ~ '^\d{2}/\d{2}/\d{4}$'
+         THEN to_date(date, 'DD/MM/YYYY')
+    END DESC NULLS LAST
+"""
+
+SELECT_SQL = f"""
+SELECT pcm_id, date, question_pdfs, answer_pdfs
 FROM records
 WHERE blocked = FALSE
   AND (
@@ -69,7 +96,7 @@ WHERE blocked = FALSE
      OR (jsonb_array_length(coalesce(answer_pdfs, '[]'::jsonb)) > 0
          AND answer_pdf_texts IS NULL)
       )
-ORDER BY pcm_id
+ORDER BY {_DATE_ORDER}, pcm_id
 LIMIT %(limit)s
 """
 
@@ -108,19 +135,26 @@ def _extract_pdfminer(path: Path) -> str:
 
 
 def _extract_ocr(path: Path) -> str:
+    """Rasterize PDF pages and run Surya OCR (GPU if TORCH_DEVICE=cuda)."""
     if not _OCR_OK:
-        raise RuntimeError("pytesseract/pdf2image not installed")
-    logger.info("OCR fallback for {}", path.name)
-    pages = convert_from_path(str(path), dpi=300)
-    return "\n".join(pytesseract.image_to_string(p, lang="ell+eng") for p in pages).strip()
+        raise RuntimeError("Surya OCR not available — check startup logs")
+    pages = convert_from_path(str(path), dpi=192)
+    results = _rec_predictor(pages, [None] * len(pages), _det_predictor)
+    lines = []
+    for page_result in results:
+        for line in page_result.text_lines:
+            if line.text:
+                lines.append(line.text)
+    return "\n".join(lines).strip()
 
 
 def extract_text(path: Path) -> tuple[str, str]:
-    """pdfminer first; if empty and OCR available, try tesseract. Returns (text, method)."""
+    """pdfminer first; if empty and OCR available, try Surya. Returns (text, method)."""
     text = _extract_pdfminer(path)
     if text:
         return text, "pdfminer"
     if _OCR_OK:
+        logger.info("OCR fallback for {}", path.name)
         text = _extract_ocr(path)
         return text, "ocr"
     return "", "pdfminer"
@@ -164,7 +198,10 @@ def _process_urls(pg, pcm_id: str, urls: list[str], kind: str) -> list[dict]:
         try:
             text, method = extract_text(pdf)
             text = _strip_nul(text)
-            logger.info("Extracted pcm_id={} kind={} method={} chars={} file={}", pcm_id, kind, method, len(text or ""), pdf.name)
+            logger.info(
+                "Extracted pcm_id={} kind={} method={} chars={} file={}",
+                pcm_id, kind, method, len(text or ""), pdf.name,
+            )
             entries.append({"url": url, "text": text or ""})
         except Exception as exc:
             entries.append({"url": url, "text": ""})
@@ -175,35 +212,40 @@ def _process_urls(pg, pcm_id: str, urls: list[str], kind: str) -> list[dict]:
 def process_record(pg, pcm_id: str, q_urls: list[str], a_urls: list[str]) -> bool:
     """
     Extract text for one record. Returns True if processed, False if still pending.
+    Any unexpected record-level error is captured in pdf_extraction_errors.
     """
     if not _is_ready(q_urls + a_urls):
         return False
 
-    q_entries = _process_urls(pg, pcm_id, q_urls, "question")
-    a_entries = _process_urls(pg, pcm_id, a_urls, "answer")
-
-    q_jsonb = json.dumps(q_entries, ensure_ascii=False) if q_entries else None
-    a_jsonb = json.dumps(a_entries, ensure_ascii=False) if a_entries else None
-    q_text = _strip_nul(_join_texts(q_entries))
-    a_text = _strip_nul(_join_texts(a_entries))
-
     try:
+        q_entries = _process_urls(pg, pcm_id, q_urls, "question")
+        a_entries = _process_urls(pg, pcm_id, a_urls, "answer")
+
+        q_jsonb = json.dumps(q_entries, ensure_ascii=False) if q_entries else None
+        a_jsonb = json.dumps(a_entries, ensure_ascii=False) if a_entries else None
+        q_text = _strip_nul(_join_texts(q_entries))
+        a_text = _strip_nul(_join_texts(a_entries))
+
         with pg.cursor() as cur:
             cur.execute(UPDATE_SQL, (q_jsonb, a_jsonb, q_text, a_text, pcm_id))
         pg.commit()
     except Exception as exc:
-        logger.error("UPDATE failed pcm_id={}: {}", pcm_id, exc)
+        logger.error("Record-level failure pcm_id={}: {}", pcm_id, exc)
         try:
             pg.rollback()
         except Exception:
             pass
+        log_error(pg, pcm_id, "", "record", exc)
 
     return True
 
 
 def run() -> None:
     setup_logging("extractor")
-    logger.info("Extractor starting: POLL_INTERVAL_S={} BATCH_SIZE={}", POLL_INTERVAL_S, BATCH_SIZE)
+    logger.info(
+        "Extractor starting: POLL_INTERVAL_S={} BATCH_SIZE={} OCR={}",
+        POLL_INTERVAL_S, BATCH_SIZE, "surya" if _OCR_OK else "disabled",
+    )
 
     pg = get_pg()
 
