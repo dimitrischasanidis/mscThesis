@@ -1,0 +1,17 @@
+services:
+  # Use registry images on server — disable local builds
+  scraper:
+    image: reg.dchasanidis.com/parliament-scraper:latest
+    build: !reset null
+
+  downloader:
+    image: reg.dchasanidis.com/parliament-downloader:latest
+    build: !reset null
+
+  extractor:
+    image: reg.dchasanidis.com/parliament-extractor:latest
+    build: !reset null
+
+  streamlit:
+    image: reg.dchasanidis.com/parliament-viewer:latest
+    build: !reset null

@@ -1,5 +1,0 @@
-requests>=2.31
-beautifulsoup4>=4.12
-loguru>=0.7
-pdfminer.six>=20221105
-psycopg2-binary>=2.9

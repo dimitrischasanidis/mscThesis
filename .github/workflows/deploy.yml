@@ -10,7 +10,13 @@ on:
 env:
   REGISTRY: reg.dchasanidis.com
   DEPLOY_DIR: ~/mscThesis
-  COMPOSE: docker compose -f docker-compose.yaml -f docker-compose.server.yml -f docker-compose.prod.yml
+  COMPOSE: >-
+    docker compose
+    --project-directory .
+    -f docker/compose.infra.yml
+    -f docker/compose.app.yml
+    -f docker/compose.server.yml
+    -f docker/compose.prod.yml
 
 jobs:
   deploy:
@@ -21,10 +27,11 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
 
     steps:
-      - name: Checkout (update compose files on server)
+      - name: Checkout (update files on server)
         uses: actions/checkout@v4
         with:
           path: ${{ env.DEPLOY_DIR }}
+          clean: false  # never wipe untracked pdfs/, data/, logs/
 
       - name: Log in to registry
         run: |
@@ -45,4 +52,5 @@ jobs:
         run: |
           sleep 5
           ${{ env.COMPOSE }} ps scraper downloader extractor streamlit
-          docker exec streamlit wget -qO- http://localhost:8501/healthz || echo "healthz not available — check logs"
+          docker exec parliament-streamlit wget -qO- http://localhost:8501/healthz \
+            || echo "healthz not available — check logs"

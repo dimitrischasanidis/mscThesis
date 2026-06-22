@@ -4,13 +4,13 @@ services:
     deploy:
       replicas: 0
 
-  # Loki joins the shared monitoring network so Grafana can reach it
+  # Loki joins the shared monitoring network so the Grafana on barad-dur can reach it
   loki:
     networks:
       - observability
       - barad-dur-monitoring_default
 
-  # Streamlit: bind-mount source for live updates on server
+  # Streamlit: bind-mount source for live code updates from git checkout
   streamlit:
     volumes:
       - ./streamlit_app:/app

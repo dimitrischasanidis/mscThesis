@@ -12,7 +12,6 @@ node_modules/
 .git/
 streamlit_app/
 .github/
+docker/
 notes.txt
 README.md
-docker-compose*.yml
-docker-compose*.yaml

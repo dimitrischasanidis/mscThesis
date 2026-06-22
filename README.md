@@ -26,10 +26,10 @@ hellenicparliament.gr
 
 | Service | Image | Description |
 |---------|-------|-------------|
-| `scraper` | `recall-scraper` | Monitors parliament site for new questions; writes metadata to Postgres |
-| `downloader` | `recall-downloader` | Downloads PDF files to local cache (`pdfs/`) |
-| `extractor` | `recall-extractor` | Extracts text from PDFs (pdfminer + OCR fallback via tesseract) |
-| `streamlit` | `recall-viewer` | Web viewer for browsing and searching records |
+| `scraper` | `parliament-scraper` | Monitors parliament site for new questions; writes metadata to Postgres |
+| `downloader` | `parliament-downloader` | Downloads PDF files to local cache (`pdfs/`) |
+| `extractor` | `parliament-extractor` | Extracts text from PDFs (pdfminer + OCR fallback via tesseract) |
+| `streamlit` | `parliament-viewer` | Web viewer for browsing and searching records |
 | `postgres` | pgvector/pgvector:pg16 | Primary datastore |
 | `loki` + `promtail` | Grafana stack | Log aggregation |
 | `grafana` | grafana/grafana | Dashboards (disabled on server, use barad-dur-monitoring) |
@@ -46,11 +46,26 @@ hellenicparliament.gr
 | `DATE_TO` | today | scraper (`RUN_ONCE` mode only) |
 | `RUN_ONCE` | — | scraper: set to `1` for a full backfill pass then exit |
 
+## Compose layout
+
+All compose files live in `docker/`. All commands run from **repo root** using
+`--project-directory .` so relative volume/config paths resolve correctly.
+
+| File | Purpose |
+|------|---------|
+| `docker/compose.infra.yml` | postgres, pgadmin, loki, promtail, grafana |
+| `docker/compose.app.yml` | scraper, downloader, extractor, streamlit |
+| `docker/compose.server.yml` | server overrides (grafana off, loki ext net, streamlit bind-mount) |
+| `docker/compose.prod.yml` | use registry images (disable local builds) |
+| `docker/compose.override.yml` | local dev port remaps + streamlit live-reload |
+
 ## Run locally
 
 ```bash
 # Start everything (builds images locally)
-docker compose up -d --build
+docker compose --project-directory . \
+  -f docker/compose.infra.yml -f docker/compose.app.yml -f docker/compose.override.yml \
+  up -d --build
 
 # Tail logs
 tail -f logs/scraper.jsonl logs/downloader.jsonl logs/extractor.jsonl
@@ -62,18 +77,30 @@ tail -f logs/scraper.jsonl logs/downloader.jsonl logs/extractor.jsonl
 
 For a full backfill (one pass, 1995 → today):
 ```bash
-docker compose run --rm -e RUN_ONCE=1 scraper
+docker compose --project-directory . \
+  -f docker/compose.infra.yml -f docker/compose.app.yml \
+  run --rm -e RUN_ONCE=1 scraper
 ```
 
 ## Deploy to server (barad-dur)
 
-CI (GitHub Actions self-hosted runner) handles builds and deploys automatically on push to `main`/`master`.
+CI (GitHub Actions self-hosted runner) handles builds and deploys automatically on push to `main`/`master`. The runner **never cleans untracked files** (`clean: false`) so `pdfs/`, `data/`, and `logs/` are preserved.
 
-Manual deploy:
+Manual deploy (from `~/mscThesis`):
 ```bash
-COMPOSE="docker compose -f docker-compose.yaml -f docker-compose.server.yml -f docker-compose.prod.yml"
+COMPOSE="docker compose --project-directory . \
+  -f docker/compose.infra.yml -f docker/compose.app.yml \
+  -f docker/compose.server.yml -f docker/compose.prod.yml"
+
 $COMPOSE pull scraper downloader extractor streamlit
 $COMPOSE up -d --no-build scraper downloader extractor streamlit
+```
+
+Start/update infra only (postgres, loki, promtail):
+```bash
+docker compose --project-directory . \
+  -f docker/compose.infra.yml -f docker/compose.server.yml \
+  up -d
 ```
 
 ## Monitoring (Loki / Grafana)

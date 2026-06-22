@@ -19,18 +19,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: recall-viewer
+          - name: parliament-viewer
             context: ./streamlit_app
             dockerfile: ./streamlit_app/Dockerfile
-          - name: recall-scraper
+          - name: parliament-scraper
             context: .
-            dockerfile: ./Dockerfile.scraper
-          - name: recall-downloader
+            dockerfile: ./docker/Dockerfile.scraper
+          - name: parliament-downloader
             context: .
-            dockerfile: ./Dockerfile.downloader
-          - name: recall-extractor
+            dockerfile: ./docker/Dockerfile.downloader
+          - name: parliament-extractor
             context: .
-            dockerfile: ./Dockerfile.extractor
+            dockerfile: ./docker/Dockerfile.extractor
 
     steps:
       - name: Checkout
