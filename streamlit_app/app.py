@@ -325,7 +325,7 @@ def render_detail(pcm_id: str) -> None:
                 )
         else:
             with st.expander(f"📝 {label}"):
-                st.info("Not extracted yet — run `extract_pdfs.py` to backfill.")
+                st.info("Not extracted yet — extractor service will process this automatically.")
 
     _render_text_section(
         "Question text",
