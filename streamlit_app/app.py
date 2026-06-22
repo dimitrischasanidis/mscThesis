@@ -148,7 +148,7 @@ def build_sidebar() -> dict:
         has_qpdf = st.checkbox("Has question PDF")
         has_apdf = st.checkbox("Has answer PDF")
         downloaded = st.checkbox("Downloaded (has PDFs)")
-        extracted = st.checkbox("Extracted to DB")
+        extracted = st.checkbox("Text has been extracted to DB")
         extraction_methods = st.multiselect(
             "Extraction method",
             ["pdfminer", "ocr", "mixed"],
