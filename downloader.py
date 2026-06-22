@@ -57,7 +57,9 @@ WHERE blocked = FALSE
      OR (jsonb_array_length(coalesce(answer_pdfs, '[]'::jsonb)) > 0
          AND answer_pdf_texts IS NULL)
       )
-ORDER BY pcm_id
+ORDER BY CASE WHEN date ~ '^\d{2}/\d{2}/\d{4}$'
+              THEN to_date(date, 'DD/MM/YYYY')
+         END DESC NULLS LAST, pcm_id
 LIMIT %(limit)s
 """
 

@@ -18,8 +18,9 @@ CREATE TABLE IF NOT EXISTS records (
     answer_pdfs         JSONB,
     question_text       TEXT,
     answer_text         TEXT,
-    question_pdf_texts  JSONB,   -- [{url, text}, ...] one entry per question PDF
-    answer_pdf_texts    JSONB,   -- [{url, text}, ...] one entry per answer PDF
+    question_pdf_texts  JSONB,   -- [{url, text, method}, ...] one entry per question PDF
+    answer_pdf_texts    JSONB,   -- [{url, text, method}, ...] one entry per answer PDF
+    pdf_extraction_method TEXT,  -- 'pdfminer' | 'ocr' | 'mixed' | null if not extracted
     blocked             BOOLEAN DEFAULT FALSE,
     block_reason        TEXT,
     detail_url          TEXT,

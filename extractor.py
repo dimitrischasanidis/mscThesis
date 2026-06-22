@@ -102,10 +102,11 @@ LIMIT %(limit)s
 
 UPDATE_SQL = """
 UPDATE records
-SET question_pdf_texts = %s,
-    answer_pdf_texts   = %s,
-    question_text      = %s,
-    answer_text        = %s
+SET question_pdf_texts    = %s,
+    answer_pdf_texts      = %s,
+    question_text         = %s,
+    answer_text           = %s,
+    pdf_extraction_method = %s
 WHERE pcm_id = %s
 """
 
@@ -202,7 +203,7 @@ def _process_urls(pg, pcm_id: str, urls: list[str], kind: str) -> list[dict]:
                 "Extracted pcm_id={} kind={} method={} chars={} file={}",
                 pcm_id, kind, method, len(text or ""), pdf.name,
             )
-            entries.append({"url": url, "text": text or ""})
+            entries.append({"url": url, "text": text or "", "method": method})
         except Exception as exc:
             entries.append({"url": url, "text": ""})
             log_error(pg, pcm_id, url, kind, exc)
@@ -226,8 +227,18 @@ def process_record(pg, pcm_id: str, q_urls: list[str], a_urls: list[str]) -> boo
         q_text = _strip_nul(_join_texts(q_entries))
         a_text = _strip_nul(_join_texts(a_entries))
 
+        all_methods = {e["method"] for e in q_entries + a_entries if e.get("method")}
+        if not all_methods:
+            extraction_method = None
+        elif all_methods == {"pdfminer"}:
+            extraction_method = "pdfminer"
+        elif all_methods == {"ocr"}:
+            extraction_method = "ocr"
+        else:
+            extraction_method = "mixed"
+
         with pg.cursor() as cur:
-            cur.execute(UPDATE_SQL, (q_jsonb, a_jsonb, q_text, a_text, pcm_id))
+            cur.execute(UPDATE_SQL, (q_jsonb, a_jsonb, q_text, a_text, extraction_method, pcm_id))
         pg.commit()
     except Exception as exc:
         logger.error("Record-level failure pcm_id={}: {}", pcm_id, exc)
