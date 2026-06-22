@@ -28,7 +28,7 @@ hellenicparliament.gr
 |---------|-------|-------------|
 | `scraper` | `parliament-scraper` | Monitors parliament site for new questions; writes metadata to Postgres |
 | `downloader` | `parliament-downloader` | Downloads PDF files to local cache (`pdfs/`) |
-| `extractor` | `parliament-extractor` | Extracts text from PDFs (pdfminer + OCR fallback via tesseract) |
+| `extractor` | `parliament-extractor` | Extracts text from PDFs (pdfminer first, EasyOCR GPU fallback for scanned pages) |
 | `streamlit` | `parliament-viewer` | Web viewer for browsing and searching records |
 | `postgres` | pgvector/pgvector:pg16 | Primary datastore |
 | `loki` + `promtail` | Grafana stack | Log aggregation |
@@ -165,6 +165,23 @@ sum(rate({job="host-python-scraper", level="ERROR"}[5m]))
 ```logql
 {svc="scraper"} |= "=== Cycle"
 ```
+
+### Other containers (not in Loki)
+
+`postgres`, `parliament-streamlit`, `loki`, `grafana`, `promtail`, and infra containers
+log to Docker stdout only — promtail does not scrape them. Use `docker logs` directly:
+
+```bash
+docker logs postgres --tail 50 -f
+docker logs parliament-streamlit --tail 50 -f
+docker logs loki --tail 50 -f
+docker logs mscthesis-promtail-1 --tail 50 -f
+docker logs grafana --tail 50 -f
+```
+
+To add a container to Loki, mount its log file into promtail's watched directory
+(`/var/log/parliament-scraper/`) and add a `scrape_configs` entry in
+`promtail/promtail-config.yml` with an explicit `svc` label.
 
 ### Postgres health (pgAdmin at `:5050`)
 
