@@ -130,13 +130,13 @@ def log_error(pg, pcm_id: str, url: str, kind: str, exc: Exception) -> None:
             pass
 
 
-def download_url(session: requests.Session, pg, pcm_id: str, kind: str, url: str) -> None:
-    """Download one PDF. Idempotent: skips if cached or already failed."""
+def download_url(session: requests.Session, pg, pcm_id: str, kind: str, url: str) -> bool:
+    """Download one PDF. Returns True if a download was attempted, False if already cached."""
     pdf_path = _pdf_cache_path(url)
     failed_path = _failed_marker(url)
 
     if pdf_path.exists() or failed_path.exists():
-        return
+        return False
 
     def _attempt() -> None:
         _jitter()
@@ -145,7 +145,7 @@ def download_url(session: requests.Session, pg, pcm_id: str, kind: str, url: str
     try:
         _attempt()
         logger.debug("Downloaded pcm_id={} kind={} url={}", pcm_id, kind, url)
-        return
+        return True
     except Exception as exc:
         if classify(exc) == "transient":
             if not site_is_up(session):
@@ -153,7 +153,7 @@ def download_url(session: requests.Session, pg, pcm_id: str, kind: str, url: str
             try:
                 _attempt()
                 logger.debug("Downloaded (retry) pcm_id={} kind={} url={}", pcm_id, kind, url)
-                return
+                return True
             except Exception as exc2:
                 exc = exc2
 
@@ -161,6 +161,7 @@ def download_url(session: requests.Session, pg, pcm_id: str, kind: str, url: str
     PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     failed_path.write_bytes(b"")
     log_error(pg, pcm_id, url, kind, exc)
+    return True
 
 
 def run() -> None:
@@ -191,14 +192,20 @@ def run() -> None:
             continue
 
         logger.info("Downloading PDFs for {} records", len(rows))
+        actual_downloads = 0
         for row in rows:
             pcm_id = row["pcm_id"]
             for url in (row["question_pdfs"] or []):
-                download_url(session, pg, pcm_id, "question", url)
+                if download_url(session, pg, pcm_id, "question", url):
+                    actual_downloads += 1
             for url in (row["answer_pdfs"] or []):
-                download_url(session, pg, pcm_id, "answer", url)
+                if download_url(session, pg, pcm_id, "answer", url):
+                    actual_downloads += 1
 
-        logger.info("Batch done")
+        logger.info("Batch done — {} new downloads", actual_downloads)
+        if actual_downloads == 0:
+            logger.debug("All cached — sleeping {}s", POLL_INTERVAL_S)
+            time.sleep(POLL_INTERVAL_S)
 
 
 if __name__ == "__main__":
