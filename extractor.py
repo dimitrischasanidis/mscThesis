@@ -16,7 +16,7 @@ Environment variables:
   PDF_CACHE_DIR     Local PDF cache directory (default: pdfs)
   POLL_INTERVAL_S   Seconds to sleep when no pending work (default: 60)
   BATCH_SIZE        Records fetched per DB query (default: 50)
-  TORCH_DEVICE      Device for Surya OCR: 'cuda' or 'cpu' (default: cpu)
+  TORCH_DEVICE      Device for EasyOCR: 'cuda' or 'cpu' (default: cpu)
 """
 
 from __future__ import annotations
@@ -48,24 +48,23 @@ except ImportError:
     _PDF2IMAGE_OK = False
     logger.warning("pdf2image/Pillow not installed — OCR unavailable")
 
-# Surya OCR — GPU-accelerated, multilingual (includes Greek)
+# EasyOCR — GPU-accelerated, multilingual (Greek + English)
 _OCR_OK = False
-_det_predictor = None
-_rec_predictor = None
+_ocr_reader = None
 
 if _PDF2IMAGE_OK:
     try:
-        from surya.recognition import RecognitionPredictor
-        from surya.detection import DetectionPredictor
+        import numpy as np
+        import easyocr
 
         _device = os.environ.get("TORCH_DEVICE", "cpu")
-        logger.info("Loading Surya OCR models on device={}", _device)
-        _det_predictor = DetectionPredictor()
-        _rec_predictor = RecognitionPredictor()
+        _use_gpu = (_device == "cuda")
+        logger.info("Loading EasyOCR models (gpu={})", _use_gpu)
+        _ocr_reader = easyocr.Reader(["el", "en"], gpu=_use_gpu)
         _OCR_OK = True
-        logger.info("Surya OCR models loaded — OCR fallback active on device={}", _device)
-    except Exception as _surya_err:
-        logger.warning("Surya OCR unavailable ({}): {}", type(_surya_err).__name__, _surya_err)
+        logger.info("EasyOCR models loaded — OCR fallback active (gpu={})", _use_gpu)
+    except Exception as _ocr_err:
+        logger.warning("EasyOCR unavailable ({}): {}", type(_ocr_err).__name__, _ocr_err)
         logger.warning("Records with scanned PDFs will log errors to pdf_extraction_errors")
 
 from shared import (
@@ -136,16 +135,15 @@ def _extract_pdfminer(path: Path) -> str:
 
 
 def _extract_ocr(path: Path) -> str:
-    """Rasterize PDF pages and run Surya OCR (GPU if TORCH_DEVICE=cuda)."""
+    """Rasterize PDF pages and run EasyOCR (GPU if TORCH_DEVICE=cuda)."""
     if not _OCR_OK:
-        raise RuntimeError("Surya OCR not available — check startup logs")
+        raise RuntimeError("EasyOCR not available — check startup logs")
     pages = convert_from_path(str(path), dpi=192)
-    results = _rec_predictor(pages, [None] * len(pages), _det_predictor)
     lines = []
-    for page_result in results:
-        for line in page_result.text_lines:
-            if line.text:
-                lines.append(line.text)
+    for page in pages:
+        page_arr = np.array(page)
+        results = _ocr_reader.readtext(page_arr, detail=0)
+        lines.extend(results)
     return "\n".join(lines).strip()
 
 
@@ -157,7 +155,7 @@ def extract_text(path: Path) -> tuple[str, str]:
     if _OCR_OK:
         logger.info("OCR fallback for {}", path.name)
         text = _extract_ocr(path)
-        return text, "ocr"
+        return text or "", "ocr"
     return "", "pdfminer"
 
 
