@@ -39,8 +39,10 @@ except ImportError:
     logger.warning("pdfminer.six not installed — text extraction unavailable")
 
 try:
+    import PIL.Image
     import pytesseract
     from pdf2image import convert_from_path
+    PIL.Image.MAX_IMAGE_PIXELS = None  # suppress DecompressionBombWarning for large scans
     _OCR_OK = True
 except ImportError:
     _OCR_OK = False
