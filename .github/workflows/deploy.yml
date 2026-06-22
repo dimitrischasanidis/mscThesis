@@ -10,65 +10,45 @@ on:
 env:
   REGISTRY: reg.dchasanidis.com
   DEPLOY_DIR: ~/mscThesis
+  COMPOSE: >-
+    docker compose
+    --project-directory .
+    -f docker/compose.infra.yml
+    -f docker/compose.app.yml
+    -f docker/compose.server.yml
+    -f docker/compose.prod.yml
 
 jobs:
   deploy:
     name: Deploy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, barad-dur]
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
 
     steps:
-      - name: Checkout
+      - name: Checkout (update files on server)
         uses: actions/checkout@v4
+        with:
+          path: ${{ env.DEPLOY_DIR }}
+          clean: false  # never wipe untracked pdfs/, data/, logs/
 
-      - name: Setup SSH
+      - name: Log in to registry
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Sync repo files to server
-        run: |
-          rsync -az --delete \
-            --exclude='pdfs/' \
-            --exclude='logs/' \
-            --exclude='.git/' \
-            --exclude='__pycache__/' \
-            --exclude='.venv/' \
-            --exclude='*.pyc' \
-            -e "ssh -i ~/.ssh/deploy_key" \
-            . "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_DIR }}/"
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | \
+            docker login ${{ env.REGISTRY }} \
+              -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
       - name: Pull new images
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "echo '${{ secrets.REGISTRY_PASSWORD }}' | docker login ${{ env.REGISTRY }} -u '${{ secrets.REGISTRY_USERNAME }}' --password-stdin && \
-             cd ${{ env.DEPLOY_DIR }} && \
-             docker compose --project-directory . \
-               -f docker/compose.infra.yml -f docker/compose.app.yml \
-               -f docker/compose.server.yml -f docker/compose.prod.yml \
-               pull scraper downloader extractor streamlit"
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: ${{ env.COMPOSE }} pull scraper downloader extractor streamlit
 
       - name: Recreate services
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${{ env.DEPLOY_DIR }} && \
-             docker compose --project-directory . \
-               -f docker/compose.infra.yml -f docker/compose.app.yml \
-               -f docker/compose.server.yml -f docker/compose.prod.yml \
-               up -d --no-build scraper downloader extractor streamlit"
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: ${{ env.COMPOSE }} up -d --no-build scraper downloader extractor streamlit
 
       - name: Verify
+        working-directory: ${{ env.DEPLOY_DIR }}
         run: |
-          ssh -i ~/.ssh/deploy_key \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${{ env.DEPLOY_DIR }} && sleep 5 && \
-             docker compose --project-directory . \
-               -f docker/compose.infra.yml -f docker/compose.app.yml \
-               -f docker/compose.server.yml -f docker/compose.prod.yml \
-               ps scraper downloader extractor streamlit"
+          sleep 5
+          ${{ env.COMPOSE }} ps scraper downloader extractor streamlit
