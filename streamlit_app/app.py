@@ -54,7 +54,13 @@ def get_conn():
 
 
 def _cur():
-    return get_conn().cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    conn = get_conn()
+    try:
+        conn.cursor().execute("SELECT 1")
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        st.cache_resource.clear()
+        conn = get_conn()
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 def query(sql: str, params=()) -> list:
