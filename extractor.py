@@ -113,12 +113,15 @@ def _extract_ocr(path: Path) -> str:
     return "\n".join(pytesseract.image_to_string(p, lang="ell+eng") for p in pages).strip()
 
 
-def extract_text(path: Path) -> str:
-    """pdfminer first; if empty and OCR available, try tesseract."""
+def extract_text(path: Path) -> tuple[str, str]:
+    """pdfminer first; if empty and OCR available, try tesseract. Returns (text, method)."""
     text = _extract_pdfminer(path)
-    if not text and _OCR_OK:
+    if text:
+        return text, "pdfminer"
+    if _OCR_OK:
         text = _extract_ocr(path)
-    return text
+        return text, "ocr"
+    return "", "pdfminer"
 
 
 def _is_ready(urls: list[str]) -> bool:
@@ -157,7 +160,9 @@ def _process_urls(pg, pcm_id: str, urls: list[str], kind: str) -> list[dict]:
             continue
         pdf = _pdf_cache_path(url)
         try:
-            text = _strip_nul(extract_text(pdf))
+            text, method = extract_text(pdf)
+            text = _strip_nul(text)
+            logger.info("Extracted pcm_id={} kind={} method={} chars={} file={}", pcm_id, kind, method, len(text or ""), pdf.name)
             entries.append({"url": url, "text": text or ""})
         except Exception as exc:
             entries.append({"url": url, "text": ""})
