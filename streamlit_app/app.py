@@ -149,6 +149,11 @@ def build_sidebar() -> dict:
         has_apdf = st.checkbox("Has answer PDF")
         downloaded = st.checkbox("Downloaded (has PDFs)")
         extracted = st.checkbox("Extracted to DB")
+        extraction_methods = st.multiselect(
+            "Extraction method",
+            ["pdfminer", "ocr", "mixed"],
+            placeholder="All methods",
+        )
         hide_blocked = st.checkbox("Hide blocked", value=True)
 
     return {
@@ -160,6 +165,7 @@ def build_sidebar() -> dict:
         "has_apdf": has_apdf,
         "downloaded": downloaded,
         "extracted": extracted,
+        "extraction_methods": extraction_methods,
         "hide_blocked": hide_blocked,
     }
 
@@ -205,6 +211,10 @@ def _build_where(filters: dict) -> tuple[str, list]:
         clauses.append(
             "(question_pdf_texts IS NOT NULL OR answer_pdf_texts IS NOT NULL)"
         )
+
+    if filters["extraction_methods"]:
+        clauses.append("pdf_extraction_method = ANY(%s)")
+        params.append(filters["extraction_methods"])
 
     if filters["hide_blocked"]:
         clauses.append("blocked = false")
