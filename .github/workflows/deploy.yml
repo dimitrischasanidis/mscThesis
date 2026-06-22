@@ -16,7 +16,6 @@ jobs:
   deploy:
     name: Deploy
     runs-on: [self-hosted, barad-dur]
-    # Only deploy when the build succeeded (not on failure/cancelled)
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -35,15 +34,15 @@ jobs:
 
       - name: Pull new images
         working-directory: ${{ env.DEPLOY_DIR }}
-        run: ${{ env.COMPOSE }} pull streamlit
+        run: ${{ env.COMPOSE }} pull scraper downloader extractor streamlit
 
-      - name: Recreate viewer
+      - name: Recreate services
         working-directory: ${{ env.DEPLOY_DIR }}
-        run: ${{ env.COMPOSE }} up -d --no-build streamlit
+        run: ${{ env.COMPOSE }} up -d --no-build scraper downloader extractor streamlit
 
       - name: Verify
         working-directory: ${{ env.DEPLOY_DIR }}
         run: |
           sleep 5
-          ${{ env.COMPOSE }} ps streamlit
+          ${{ env.COMPOSE }} ps scraper downloader extractor streamlit
           docker exec streamlit wget -qO- http://localhost:8501/healthz || echo "healthz not available — check logs"

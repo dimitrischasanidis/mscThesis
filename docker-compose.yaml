@@ -76,6 +76,80 @@ services:
     depends_on:
       - postgres
 
+  # ── Application services ───────────────────────────────────────
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper
+    image: reg.dchasanidis.com/recall-scraper:latest
+    container_name: recall-scraper
+    restart: unless-stopped
+    environment:
+      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      POLL_INTERVAL_S: "3600"
+      LOOKBACK_DAYS: "30"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - backend
+    depends_on:
+      - postgres
+
+  downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile.downloader
+    image: reg.dchasanidis.com/recall-downloader:latest
+    container_name: recall-downloader
+    restart: unless-stopped
+    environment:
+      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      PDF_CACHE_DIR: "/app/pdfs"
+      POLL_INTERVAL_S: "60"
+    volumes:
+      - ./pdfs:/app/pdfs
+      - ./logs:/app/logs
+    networks:
+      - backend
+    depends_on:
+      - postgres
+
+  extractor:
+    build:
+      context: .
+      dockerfile: Dockerfile.extractor
+    image: reg.dchasanidis.com/recall-extractor:latest
+    container_name: recall-extractor
+    restart: unless-stopped
+    environment:
+      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      PDF_CACHE_DIR: "/app/pdfs"
+      POLL_INTERVAL_S: "60"
+    volumes:
+      - ./pdfs:/app/pdfs
+      - ./logs:/app/logs
+    networks:
+      - backend
+    depends_on:
+      - postgres
+
+  streamlit:
+    build: ./streamlit_app
+    image: reg.dchasanidis.com/recall-viewer:latest
+    container_name: streamlit
+    restart: unless-stopped
+    environment:
+      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      PDF_CACHE_DIR: "/app/static"
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./pdfs:/app/static
+    networks:
+      - backend
+    depends_on:
+      - postgres
+
 networks:
   observability:
   backend:

@@ -1,4 +1,5 @@
 services:
+  # Remap ports for local dev (avoid conflicts with other local stacks)
   loki:
     ports:
       - "3101:3100"
@@ -8,3 +9,9 @@ services:
   postgres:
     ports:
       - "5434:5432"
+
+  # Live-reload streamlit source in local dev
+  streamlit:
+    volumes:
+      - ./streamlit_app:/app
+      - ./pdfs:/app/static

@@ -1,0 +1,159 @@
+# Greek Parliament Scraper
+
+Scrapes the Hellenic Parliament's parliamentary questions database, extracts PDF text, and serves a Streamlit viewer — all with Loki/Grafana observability.
+
+## Architecture
+
+```
+hellenicparliament.gr
+        │
+        ▼
+  [scraper.py] ──► Postgres (records table: metadata + PDF URLs)
+                        │
+                        ▼
+  [downloader.py] ──► pdfs/<sha1>.pdf  (or .pdf.failed on error)
+                        │
+                        ▼
+  [extractor.py] ──► Postgres (question_pdf_texts / answer_pdf_texts)
+                        │
+                        ▼
+  [streamlit viewer] ◄─┘
+
+  logs/*.jsonl ──► Promtail ──► Loki ──► Grafana
+```
+
+## Services
+
+| Service | Image | Description |
+|---------|-------|-------------|
+| `scraper` | `recall-scraper` | Monitors parliament site for new questions; writes metadata to Postgres |
+| `downloader` | `recall-downloader` | Downloads PDF files to local cache (`pdfs/`) |
+| `extractor` | `recall-extractor` | Extracts text from PDFs (pdfminer + OCR fallback via tesseract) |
+| `streamlit` | `recall-viewer` | Web viewer for browsing and searching records |
+| `postgres` | pgvector/pgvector:pg16 | Primary datastore |
+| `loki` + `promtail` | Grafana stack | Log aggregation |
+| `grafana` | grafana/grafana | Dashboards (disabled on server, use barad-dur-monitoring) |
+
+## Environment variables
+
+| Variable | Default | Used by |
+|----------|---------|---------|
+| `PG_DSN` | `host=localhost port=5433 dbname=parliament user=parliament password=parliament` | all Python services |
+| `PDF_CACHE_DIR` | `pdfs` | downloader, extractor |
+| `POLL_INTERVAL_S` | `3600` (scraper) / `60` (downloader, extractor) | all Python services |
+| `LOOKBACK_DAYS` | `30` | scraper (monitoring mode) |
+| `DATE_FROM` | `01/01/1995` | scraper (`RUN_ONCE` mode only) |
+| `DATE_TO` | today | scraper (`RUN_ONCE` mode only) |
+| `RUN_ONCE` | — | scraper: set to `1` for a full backfill pass then exit |
+
+## Run locally
+
+```bash
+# Start everything (builds images locally)
+docker compose up -d --build
+
+# Tail logs
+tail -f logs/scraper.jsonl logs/downloader.jsonl logs/extractor.jsonl
+
+# Grafana: http://localhost:3001  (admin/admin)
+# Streamlit: http://localhost:8501
+# pgAdmin: http://localhost:5050  (admin@parliament.local / admin)
+```
+
+For a full backfill (one pass, 1995 → today):
+```bash
+docker compose run --rm -e RUN_ONCE=1 scraper
+```
+
+## Deploy to server (barad-dur)
+
+CI (GitHub Actions self-hosted runner) handles builds and deploys automatically on push to `main`/`master`.
+
+Manual deploy:
+```bash
+COMPOSE="docker compose -f docker-compose.yaml -f docker-compose.server.yml -f docker-compose.prod.yml"
+$COMPOSE pull scraper downloader extractor streamlit
+$COMPOSE up -d --no-build scraper downloader extractor streamlit
+```
+
+## Monitoring (Loki / Grafana)
+
+Grafana: `http://localhost:3001` (local) or via barad-dur-monitoring Grafana instance on the server.
+
+Loki datasource is auto-provisioned. All Python services write structured JSONL logs to `logs/`; Promtail ships them to Loki with labels:
+
+| Label | Values |
+|-------|--------|
+| `job` | `host-python-scraper` |
+| `app` | `parliament-scraper` |
+| `svc` | `scraper` \| `downloader` \| `extractor` |
+| `level` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` |
+
+### LogQL queries
+
+**All errors across services:**
+```logql
+{job="host-python-scraper", level="ERROR"}
+```
+
+**Per-service streams:**
+```logql
+{svc="scraper"}
+{svc="downloader"}
+{svc="extractor"}
+```
+
+**Scraper: HTTP 403 blocks:**
+```logql
+{svc="scraper"} |= "HTTP 403"
+{svc="scraper"} |= "BLOCKED (403)"
+```
+
+**Scraper: crawl rate (results pages/sec):**
+```logql
+{svc="scraper"} |= "rate=" | regexp `rate=(?P<rate>[0-9.]+)p/s`
+```
+
+**PDF download failures:**
+```logql
+{svc="downloader"} |= "PDF download failed"
+```
+
+**PDF extraction failures:**
+```logql
+{svc="extractor"} |= "PDF extraction failed"
+```
+
+**OCR fallbacks (scanned PDFs):**
+```logql
+{svc="extractor"} |= "OCR fallback"
+```
+
+**Error rate over time:**
+```logql
+sum(rate({job="host-python-scraper", level="ERROR"}[5m]))
+```
+
+**Scraper cycle starts:**
+```logql
+{svc="scraper"} |= "=== Cycle"
+```
+
+### Postgres health (pgAdmin at `:5050`)
+
+```sql
+-- Records with extracted text
+SELECT COUNT(*) FROM records WHERE question_pdf_texts IS NOT NULL OR answer_pdf_texts IS NOT NULL;
+
+-- Pending extraction
+SELECT COUNT(*) FROM records
+WHERE blocked = FALSE
+  AND (jsonb_array_length(coalesce(question_pdfs,'[]'::jsonb)) > 0 AND question_pdf_texts IS NULL
+    OR jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb)) > 0 AND answer_pdf_texts IS NULL);
+
+-- Blocked records
+SELECT COUNT(*) FROM records WHERE blocked = TRUE;
+
+-- Extraction errors
+SELECT error_type, COUNT(*) FROM pdf_extraction_errors GROUP BY 1 ORDER BY 2 DESC;
+```

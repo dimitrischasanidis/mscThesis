@@ -24,7 +24,13 @@ jobs:
             dockerfile: ./streamlit_app/Dockerfile
           - name: recall-scraper
             context: .
-            dockerfile: ./Dockerfile
+            dockerfile: ./Dockerfile.scraper
+          - name: recall-downloader
+            context: .
+            dockerfile: ./Dockerfile.downloader
+          - name: recall-extractor
+            context: .
+            dockerfile: ./Dockerfile.extractor
 
     steps:
       - name: Checkout

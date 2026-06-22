@@ -18,6 +18,12 @@ scrape_configs:
           app: parliament-scraper
           __path__: /var/log/parliament-scraper/*.jsonl
 
+    # Extract service name (scraper / downloader / extractor) from filename
+    relabel_configs:
+      - source_labels: [__path__]
+        regex: /var/log/parliament-scraper/([^/]+)\.jsonl
+        target_label: svc
+
     pipeline_stages:
       # Parse loguru's serialize=True JSONL format
       - json:

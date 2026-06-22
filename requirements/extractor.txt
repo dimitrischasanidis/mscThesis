@@ -1,0 +1,6 @@
+pdfminer.six>=20221105
+pytesseract>=0.3
+pdf2image>=1.17
+Pillow>=10.0
+psycopg2-binary>=2.9
+loguru>=0.7
