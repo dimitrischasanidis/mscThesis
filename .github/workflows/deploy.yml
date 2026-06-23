@@ -27,18 +27,11 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Sync repo to deploy directory
+      - name: Update repo on server
+        working-directory: ${{ env.DEPLOY_DIR }}
         run: |
-          rsync -a --delete \
-            --exclude='pdfs/' \
-            --exclude='logs/' \
-            --exclude='.env' \
-            --exclude='.env.*' \
-            --exclude='data/' \
-            $GITHUB_WORKSPACE/ ${{ env.DEPLOY_DIR }}/
+          git fetch https://github.com/dimitrischasanidis/mscThesis.git master
+          git reset --hard FETCH_HEAD
 
       - name: Log in to registry
         run: |
