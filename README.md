@@ -8,13 +8,13 @@ Scrapes the Hellenic Parliament's parliamentary questions database, extracts PDF
 hellenicparliament.gr
         │
         ▼
-  [scraper.py] ──► Postgres (records table: metadata + PDF URLs)
-                        │
-                        ▼
-  [downloader.py] ──► pdfs/<sha1>.pdf  (or .pdf.failed on error)
-                        │
-                        ▼
-  [extractor.py] ──► Postgres (question_pdf_texts / answer_pdf_texts)
+  [ingestion/scraper.py] ──► Postgres (records table: metadata + PDF URLs)
+                                  │
+                                  ▼
+  [ingestion/downloader.py] ──► pdfs/<sha1>.pdf  (or .pdf.failed on error)
+                                  │
+                                  ▼
+  [ingestion/extractor.py] ──► Postgres (question_pdf_texts / answer_pdf_texts)
                         │
                         ▼
   [streamlit viewer] ◄─┘

@@ -14,9 +14,9 @@ services:
   streamlit:
     volumes:
       - ./streamlit_app:/app
-      - ./pdfs:/app/static
+      - ${PDFS_HOST_DIR:-./pdfs}:/app/static
 
-  # Extractor: GPU access + persistent Surya model cache
+  # Extractor: GPU access + persistent EasyOCR model cache
   extractor:
     environment:
       TORCH_DEVICE: cuda

@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements/scraper.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY shared.py scraper.py ./
+COPY ingestion/shared.py ingestion/scraper.py ./
 
 CMD ["python", "scraper.py"]

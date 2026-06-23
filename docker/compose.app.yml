@@ -8,9 +8,9 @@ services:
     container_name: parliament-scraper
     restart: unless-stopped
     environment:
-      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
-      POLL_INTERVAL_S: "3600"
-      LOOKBACK_DAYS: "30"
+      PG_DSN: "host=postgres port=5432 dbname=${POSTGRES_DB:-parliament} user=${POSTGRES_USER:-parliament} password=${POSTGRES_PASSWORD:-parliament}"
+      POLL_INTERVAL_S: "${SCRAPER_POLL_INTERVAL_S:-3600}"
+      LOOKBACK_DAYS: "${LOOKBACK_DAYS:-30}"
     volumes:
       - ./logs:/app/logs
     networks:
@@ -26,11 +26,11 @@ services:
     container_name: parliament-downloader
     restart: unless-stopped
     environment:
-      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      PG_DSN: "host=postgres port=5432 dbname=${POSTGRES_DB:-parliament} user=${POSTGRES_USER:-parliament} password=${POSTGRES_PASSWORD:-parliament}"
       PDF_CACHE_DIR: "/app/pdfs"
-      POLL_INTERVAL_S: "60"
+      POLL_INTERVAL_S: "${INGEST_POLL_INTERVAL_S:-60}"
     volumes:
-      - ./pdfs:/app/pdfs
+      - ${PDFS_HOST_DIR:-./pdfs}:/app/pdfs
       - ./logs:/app/logs
     networks:
       - backend
@@ -45,11 +45,12 @@ services:
     container_name: parliament-extractor
     restart: unless-stopped
     environment:
-      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      PG_DSN: "host=postgres port=5432 dbname=${POSTGRES_DB:-parliament} user=${POSTGRES_USER:-parliament} password=${POSTGRES_PASSWORD:-parliament}"
       PDF_CACHE_DIR: "/app/pdfs"
-      POLL_INTERVAL_S: "60"
+      POLL_INTERVAL_S: "${INGEST_POLL_INTERVAL_S:-60}"
+      BATCH_SIZE: "${BATCH_SIZE:-50}"
     volumes:
-      - ./pdfs:/app/pdfs
+      - ${PDFS_HOST_DIR:-./pdfs}:/app/pdfs
       - ./logs:/app/logs
     networks:
       - backend
@@ -65,12 +66,12 @@ services:
     container_name: parliament-streamlit
     restart: unless-stopped
     environment:
-      PG_DSN: "host=postgres port=5432 dbname=parliament user=parliament password=parliament"
+      PG_DSN: "host=postgres port=5432 dbname=${POSTGRES_DB:-parliament} user=${POSTGRES_USER:-parliament} password=${POSTGRES_PASSWORD:-parliament}"
       PDF_CACHE_DIR: "/app/static"
     ports:
       - "8501:8501"
     volumes:
-      - ./pdfs:/app/static
+      - ${PDFS_HOST_DIR:-./pdfs}:/app/static
     networks:
       - backend
     depends_on:

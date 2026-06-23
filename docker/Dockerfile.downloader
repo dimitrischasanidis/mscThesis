@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements/downloader.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY shared.py downloader.py ./
+COPY ingestion/shared.py ingestion/downloader.py ./
 
 CMD ["python", "downloader.py"]

@@ -24,6 +24,6 @@ RUN pip install --no-cache-dir \
 COPY requirements/extractor.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY shared.py extractor.py ./
+COPY ingestion/shared.py ingestion/extractor.py ./
 
 CMD ["python", "extractor.py"]

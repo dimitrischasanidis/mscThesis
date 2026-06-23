@@ -49,9 +49,9 @@ services:
     container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: parliament
-      POSTGRES_USER: parliament
-      POSTGRES_PASSWORD: parliament
+      POSTGRES_DB: ${POSTGRES_DB:-parliament}
+      POSTGRES_USER: ${POSTGRES_USER:-parliament}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parliament}
     ports:
       - "5433:5432"
     volumes:
