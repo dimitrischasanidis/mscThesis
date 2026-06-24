@@ -445,11 +445,13 @@ def main():
         ps = get_pipeline_stats()
     files_on_disk = ps.get("files_on_disk") or 0
     total_urls = int(ps.get("total_pdf_urls") or 0)
-    pm1, pm2, pm3, pm4 = st.columns(4)
-    pm1.metric("⬇ Pending download", f"{ps.get('pending_download', 0):,}", help="Records where not all PDFs are on disk yet")
-    pm2.metric("⚙ Pending extraction", f"{ps.get('pending_extraction', 0):,}", help="Records downloaded but text not yet extracted")
-    pm3.metric("✓ Extracted records", f"{ps.get('extracted', 0):,}", help="Records with extracted PDF text")
-    pm4.metric(
+    pending_pdfs = max(total_urls - files_on_disk, 0) if total_urls else 0
+    pm1, pm2, pm3, pm4, pm5 = st.columns(5)
+    pm1.metric("⬇ Pending records", f"{ps.get('pending_download', 0):,}", help="Records where ≥1 PDF is not on disk yet")
+    pm2.metric("⬇ Pending PDFs", f"{pending_pdfs:,}", help="Individual PDF files not yet downloaded (total URLs − files on disk)")
+    pm3.metric("⚙ Pending extraction", f"{ps.get('pending_extraction', 0):,}", help="Records fully downloaded but text not yet extracted")
+    pm4.metric("✓ Extracted records", f"{ps.get('extracted', 0):,}", help="Records with extracted PDF text")
+    pm5.metric(
         "📂 Files on disk",
         f"{files_on_disk:,} / {total_urls:,}" if total_urls else f"{files_on_disk:,}",
         help="PDF files cached on NAS / total unique PDF URLs",
