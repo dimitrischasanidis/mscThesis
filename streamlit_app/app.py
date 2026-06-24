@@ -153,7 +153,7 @@ def build_sidebar() -> dict:
         st.markdown("**Filters**")
         has_qpdf = st.checkbox("Has question PDF")
         has_apdf = st.checkbox("Has answer PDF")
-        downloaded = st.checkbox("Downloaded (has PDFs)")
+        downloaded = st.checkbox("All PDFs downloaded")
         extracted = st.checkbox("Text has been extracted to DB")
         extraction_methods = st.multiselect(
             "Extraction method",
@@ -208,10 +208,7 @@ def _build_where(filters: dict) -> tuple[str, list]:
         clauses.append("jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb)) > 0")
 
     if filters["downloaded"]:
-        clauses.append(
-            "(jsonb_array_length(coalesce(question_pdfs,'[]'::jsonb)) > 0"
-            " OR jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb)) > 0)"
-        )
+        clauses.append("all_pdfs_cached = TRUE")
 
     if filters["extracted"]:
         clauses.append(

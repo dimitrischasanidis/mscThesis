@@ -204,6 +204,25 @@ def run() -> None:
                 if download_url(session, pg, pcm_id, "answer", url):
                     actual_downloads += 1
 
+            all_urls = list(row["question_pdfs"] or []) + list(row["answer_pdfs"] or [])
+            if all_urls and all(
+                _pdf_cache_path(u).exists() or _failed_marker(u).exists()
+                for u in all_urls
+            ):
+                try:
+                    with pg.cursor() as cur:
+                        cur.execute(
+                            "UPDATE records SET all_pdfs_cached = TRUE WHERE pcm_id = %s",
+                            (pcm_id,),
+                        )
+                    pg.commit()
+                except Exception as e:
+                    logger.warning("Could not set all_pdfs_cached for {}: {}", pcm_id, e)
+                    try:
+                        pg.rollback()
+                    except Exception:
+                        pass
+
         logger.info("Batch done — {} new downloads", actual_downloads)
         if actual_downloads == 0:
             logger.debug("All cached — sleeping {}s", POLL_INTERVAL_S)
