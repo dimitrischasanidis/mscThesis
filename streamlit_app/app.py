@@ -107,11 +107,21 @@ def get_pipeline_stats() -> dict:
     """)
     stats = dict(row) if row else {}
 
-    # Count PDF files on disk — NAS mount at /app/static; slow for 200k files, TTL covers it
+    # Count PDF files on disk and sum sizes — NAS mount at /app/static; slow for 200k files, TTL covers it
     try:
-        stats["files_on_disk"] = sum(1 for f in STATIC_DIR.iterdir() if f.suffix == ".pdf")
+        count, total_bytes = 0, 0
+        for f in STATIC_DIR.iterdir():
+            if f.suffix == ".pdf":
+                count += 1
+                try:
+                    total_bytes += f.stat().st_size
+                except OSError:
+                    pass
+        stats["files_on_disk"] = count
+        stats["disk_bytes"] = total_bytes
     except Exception:
         stats["files_on_disk"] = None
+        stats["disk_bytes"] = None
 
     return stats
 
@@ -447,6 +457,7 @@ def main():
         ps = get_pipeline_stats()
     files_on_disk = ps.get("files_on_disk") or 0
     total_urls = int(ps.get("total_pdf_urls") or 0)
+    disk_gb = (ps.get("disk_bytes") or 0) / (1024 ** 3)
     pending_pdfs = max(total_urls - files_on_disk, 0) if total_urls else 0
     pm1, pm2, pm3, pm4, pm5 = st.columns(5)
     pm1.metric("⬇ Pending records", f"{ps.get('pending_download', 0):,}", help="Records where ≥1 PDF is not on disk yet")
@@ -456,6 +467,8 @@ def main():
     pm5.metric(
         "📂 Files on disk",
         f"{files_on_disk:,} / {total_urls:,}" if total_urls else f"{files_on_disk:,}",
+        delta=f"{disk_gb:.1f} GB" if disk_gb else None,
+        delta_color="off",
         help="PDF files cached on NAS / total unique PDF URLs",
     )
     if total_urls:
