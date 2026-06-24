@@ -92,8 +92,10 @@ def get_pipeline_stats() -> dict:
                     OR jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb))   > 0)
                   AND blocked = FALSE)                                      AS pending_download,
             COUNT(*) FILTER (
-                WHERE all_pdfs_cached = TRUE
-                  AND (question_pdf_texts IS NULL OR answer_pdf_texts IS NULL)
+                WHERE question_pdf_texts IS NULL
+                  AND answer_pdf_texts IS NULL
+                  AND (jsonb_array_length(coalesce(question_pdfs,'[]'::jsonb)) > 0
+                    OR jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb))   > 0)
                   AND blocked = FALSE)                                      AS pending_extraction,
             COUNT(*) FILTER (
                 WHERE pdf_extraction_method IS NOT NULL
