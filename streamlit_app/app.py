@@ -33,6 +33,8 @@ PG_DSN = os.environ.get(
 PDF_CACHE_DIR = Path(os.environ.get("PDF_CACHE_DIR", "/cache"))
 PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+STATIC_DIR = Path("/app/static")
+
 PAGE_SIZE = 25
 
 _HEADERS = {
@@ -72,6 +74,44 @@ def query(sql: str, params=()) -> list:
 def query_one(sql: str, params=()):
     rows = query(sql, params)
     return rows[0] if rows else None
+
+
+# ── Pipeline stats ────────────────────────────────────────────────────────────
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_pipeline_stats() -> dict:
+    row = query_one("""
+        SELECT
+            COUNT(*) FILTER (WHERE blocked = FALSE)                        AS total,
+            SUM(jsonb_array_length(coalesce(question_pdfs,'[]'::jsonb))
+              + jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb)))     AS total_pdf_urls,
+            COUNT(*) FILTER (
+                WHERE all_pdfs_cached = FALSE
+                  AND (jsonb_array_length(coalesce(question_pdfs,'[]'::jsonb)) > 0
+                    OR jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb))   > 0)
+                  AND blocked = FALSE)                                      AS pending_download,
+            COUNT(*) FILTER (
+                WHERE all_pdfs_cached = TRUE
+                  AND (question_pdf_texts IS NULL OR answer_pdf_texts IS NULL)
+                  AND blocked = FALSE)                                      AS pending_extraction,
+            COUNT(*) FILTER (
+                WHERE pdf_extraction_method IS NOT NULL
+                  AND blocked = FALSE)                                      AS extracted,
+            COUNT(*) FILTER (
+                WHERE all_pdfs_cached = TRUE
+                  AND blocked = FALSE)                                      AS records_downloaded
+        FROM records
+    """)
+    stats = dict(row) if row else {}
+
+    # Count PDF files on disk — NAS mount at /app/static; slow for 200k files, TTL covers it
+    try:
+        stats["files_on_disk"] = sum(1 for f in STATIC_DIR.iterdir() if f.suffix == ".pdf")
+    except Exception:
+        stats["files_on_disk"] = None
+
+    return stats
 
 
 # ── PDF helpers ───────────────────────────────────────────────────────────────
@@ -399,6 +439,28 @@ def main():
     st.session_state.page = min(st.session_state.page, total_pages - 1)
 
     st.title("🏛️ Greek Parliament Records")
+
+    # Pipeline status
+    with st.spinner("Loading pipeline stats…"):
+        ps = get_pipeline_stats()
+    files_on_disk = ps.get("files_on_disk") or 0
+    total_urls = int(ps.get("total_pdf_urls") or 0)
+    pm1, pm2, pm3, pm4 = st.columns(4)
+    pm1.metric("⬇ Pending download", f"{ps.get('pending_download', 0):,}", help="Records where not all PDFs are on disk yet")
+    pm2.metric("⚙ Pending extraction", f"{ps.get('pending_extraction', 0):,}", help="Records downloaded but text not yet extracted")
+    pm3.metric("✓ Extracted records", f"{ps.get('extracted', 0):,}", help="Records with extracted PDF text")
+    pm4.metric(
+        "📂 Files on disk",
+        f"{files_on_disk:,} / {total_urls:,}" if total_urls else f"{files_on_disk:,}",
+        help="PDF files cached on NAS / total unique PDF URLs",
+    )
+    if total_urls:
+        st.progress(
+            min(files_on_disk / total_urls, 1.0),
+            text=f"Download progress: {files_on_disk / total_urls * 100:.1f}%  ({files_on_disk:,} of {total_urls:,} PDFs)",
+        )
+    st.divider()
+
     st.caption(f"**{total:,}** records · page {st.session_state.page + 1} / {total_pages}")
 
     rows = fetch_page(where_clause, params_json, st.session_state.page)
