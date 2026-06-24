@@ -100,6 +100,8 @@ def get_pipeline_stats() -> dict:
             COUNT(*) FILTER (
                 WHERE pdf_extraction_method IS NOT NULL
                   AND blocked = FALSE)                                      AS extracted,
+            SUM(jsonb_array_length(coalesce(question_pdf_texts,'[]'::jsonb))
+              + jsonb_array_length(coalesce(answer_pdf_texts,'[]'::jsonb))) AS extracted_pdf_count,
             COUNT(*) FILTER (
                 WHERE all_pdfs_cached = TRUE
                   AND blocked = FALSE)                                      AS records_downloaded,
@@ -481,11 +483,17 @@ def main():
             text=f"Download progress: {files_on_disk / total_urls * 100:.1f}%  ({files_on_disk:,} of {total_urls:,} PDFs)",
         )
     extracted = int(ps.get("extracted") or 0)
+    extracted_pdf_count = int(ps.get("extracted_pdf_count") or 0)
     records_with_pdfs = int(ps.get("records_with_pdfs") or 0)
+    if total_urls:
+        st.progress(
+            min(extracted_pdf_count / total_urls, 1.0),
+            text=f"Extraction progress (PDF files): {extracted_pdf_count / total_urls * 100:.1f}%  ({extracted_pdf_count:,} of {total_urls:,} PDF document files extracted)",
+        )
     if records_with_pdfs:
         st.progress(
             min(extracted / records_with_pdfs, 1.0),
-            text=f"Extraction progress: {extracted / records_with_pdfs * 100:.1f}%  ({extracted:,} of {records_with_pdfs:,} records extracted)",
+            text=f"Extraction progress (records): {extracted / records_with_pdfs * 100:.1f}%  ({extracted:,} of {records_with_pdfs:,} records extracted — each record is a collection of PDF documents)",
         )
     st.divider()
 
