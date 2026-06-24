@@ -102,7 +102,11 @@ def get_pipeline_stats() -> dict:
                   AND blocked = FALSE)                                      AS extracted,
             COUNT(*) FILTER (
                 WHERE all_pdfs_cached = TRUE
-                  AND blocked = FALSE)                                      AS records_downloaded
+                  AND blocked = FALSE)                                      AS records_downloaded,
+            COUNT(*) FILTER (
+                WHERE (jsonb_array_length(coalesce(question_pdfs,'[]'::jsonb)) > 0
+                    OR jsonb_array_length(coalesce(answer_pdfs,'[]'::jsonb))   > 0)
+                  AND blocked = FALSE)                                      AS records_with_pdfs
         FROM records
     """)
     stats = dict(row) if row else {}
@@ -475,6 +479,13 @@ def main():
         st.progress(
             min(files_on_disk / total_urls, 1.0),
             text=f"Download progress: {files_on_disk / total_urls * 100:.1f}%  ({files_on_disk:,} of {total_urls:,} PDFs)",
+        )
+    extracted = int(ps.get("extracted") or 0)
+    records_with_pdfs = int(ps.get("records_with_pdfs") or 0)
+    if records_with_pdfs:
+        st.progress(
+            min(extracted / records_with_pdfs, 1.0),
+            text=f"Extraction progress: {extracted / records_with_pdfs * 100:.1f}%  ({extracted:,} of {records_with_pdfs:,} records extracted)",
         )
     st.divider()
 
