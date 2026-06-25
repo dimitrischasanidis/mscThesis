@@ -167,6 +167,11 @@ def _is_ready(urls: list[str]) -> bool:
     return True
 
 
+def _has_failed(urls: list[str]) -> bool:
+    """True when at least one URL has a permanent .pdf.failed marker."""
+    return any(_failed_marker(url).exists() for url in urls)
+
+
 def log_error(pg, pcm_id: str, url: str, kind: str, exc: Exception) -> None:
     error_type = type(exc).__name__
     error_msg = str(exc)
@@ -190,9 +195,6 @@ def log_error(pg, pcm_id: str, url: str, kind: str, exc: Exception) -> None:
 def _process_urls(pg, pcm_id: str, urls: list[str], kind: str) -> list[dict]:
     entries: list[dict] = []
     for url in urls:
-        if _failed_marker(url).exists():
-            entries.append({"url": url, "text": ""})
-            continue
         pdf = _pdf_cache_path(url)
         try:
             text, method = extract_text(pdf)
@@ -210,10 +212,16 @@ def _process_urls(pg, pcm_id: str, urls: list[str], kind: str) -> list[dict]:
 
 def process_record(pg, pcm_id: str, q_urls: list[str], a_urls: list[str]) -> bool:
     """
-    Extract text for one record. Returns True if processed, False if still pending.
-    Any unexpected record-level error is captured in pdf_extraction_errors.
+    Extract text for one record. Returns True if processed, False if still pending
+    (downloader not done) or skipped (≥1 permanent download failure — stays NULL
+    so the PDF can be retried later by deleting the .failed marker).
     """
-    if not _is_ready(q_urls + a_urls):
+    all_urls = q_urls + a_urls
+    if not _is_ready(all_urls):
+        return False
+
+    # Any permanent download failure → leave texts NULL for future retry
+    if _has_failed(all_urls):
         return False
 
     try:
@@ -277,19 +285,26 @@ def run() -> None:
             time.sleep(POLL_INTERVAL_S)
             continue
 
-        processed = skipped = 0
+        processed = skipped_pending = skipped_failed = 0
         for row in rows:
             pcm_id = row["pcm_id"]
+            q_urls = row["question_pdfs"] or []
+            a_urls = row["answer_pdfs"] or []
             try:
-                if process_record(pg, pcm_id, row["question_pdfs"] or [], row["answer_pdfs"] or []):
+                if process_record(pg, pcm_id, q_urls, a_urls):
                     processed += 1
+                elif _has_failed(q_urls + a_urls):
+                    skipped_failed += 1
                 else:
-                    skipped += 1
+                    skipped_pending += 1
             except Exception:
                 logger.exception("Unexpected error pcm_id={}", pcm_id)
-                skipped += 1
+                skipped_pending += 1
 
-        logger.info("Batch: processed={} skipped_pending={}", processed, skipped)
+        logger.info(
+            "Batch: processed={} skipped_pending={} skipped_failed={}",
+            processed, skipped_pending, skipped_failed,
+        )
 
         if processed == 0:
             time.sleep(POLL_INTERVAL_S)

@@ -132,6 +132,80 @@ def get_pipeline_stats() -> dict:
     return stats
 
 
+# ── Errors ───────────────────────────────────────────────────────────────────
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_error_summary() -> list:
+    return query("""
+        SELECT error_type, COUNT(*) AS count
+        FROM pdf_extraction_errors
+        GROUP BY 1 ORDER BY 2 DESC
+    """)
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_errors(error_type_filter: str | None, limit: int = 500) -> list:
+    if error_type_filter:
+        return query(
+            """
+            SELECT pcm_id, kind, error_type, error_msg, url, created_at
+            FROM pdf_extraction_errors
+            WHERE error_type = %s
+            ORDER BY created_at DESC LIMIT %s
+            """,
+            (error_type_filter, limit),
+        )
+    return query(
+        """
+        SELECT pcm_id, kind, error_type, error_msg, url, created_at
+        FROM pdf_extraction_errors
+        ORDER BY created_at DESC LIMIT %s
+        """,
+        (limit,),
+    )
+
+
+def render_errors_tab() -> None:
+    summary = get_error_summary()
+    total_errors = sum(r["count"] for r in summary)
+    st.metric("Total errors", f"{total_errors:,}")
+
+    if summary:
+        st.dataframe(
+            pd.DataFrame([dict(r) for r in summary]),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "error_type": st.column_config.TextColumn("Error type"),
+                "count": st.column_config.NumberColumn("Count"),
+            },
+        )
+
+    st.markdown("---")
+    error_types = ["All"] + [r["error_type"] for r in summary if r["error_type"]]
+    selected = st.selectbox("Filter by error type", error_types)
+    filter_val = None if selected == "All" else selected
+
+    rows = get_errors(filter_val)
+    if rows:
+        st.dataframe(
+            pd.DataFrame([dict(r) for r in rows]),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "pcm_id": st.column_config.TextColumn("Record ID", width="medium"),
+                "kind": st.column_config.TextColumn("Kind", width="small"),
+                "error_type": st.column_config.TextColumn("Error type", width="medium"),
+                "error_msg": st.column_config.TextColumn("Message"),
+                "url": st.column_config.TextColumn("URL"),
+                "created_at": st.column_config.DatetimeColumn("Time", width="medium"),
+            },
+        )
+    else:
+        st.info("No errors recorded.")
+
+
 # ── PDF helpers ───────────────────────────────────────────────────────────────
 
 
@@ -497,49 +571,55 @@ def main():
         )
     st.divider()
 
-    st.caption(f"**{total:,}** records · page {st.session_state.page + 1} / {total_pages}")
+    browse_tab, errors_tab = st.tabs(["📋 Browse", "⚠️ Errors"])
 
-    rows = fetch_page(where_clause, params_json, st.session_state.page)
-    df = pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+    with browse_tab:
+        st.caption(f"**{total:,}** records · page {st.session_state.page + 1} / {total_pages}")
 
-    if df.empty:
-        st.info("No records match the current filters.")
-    else:
-        event = st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            column_config={
-                "pcm_id": st.column_config.TextColumn("ID", width="medium"),
-                "date": st.column_config.TextColumn("Date", width="small"),
-                "type_name": st.column_config.TextColumn("Type", width="medium"),
-                "type_label": st.column_config.TextColumn("Label", width="medium"),
-                "subject": st.column_config.TextColumn("Subject"),
-                "blocked": st.column_config.CheckboxColumn("Blocked", width="small"),
-            },
-        )
+        rows = fetch_page(where_clause, params_json, st.session_state.page)
+        df = pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
 
-        sel_rows = event.selection.rows if event.selection.rows else []
-        if sel_rows:
-            st.session_state.selected_pcm_id = df.iloc[sel_rows[0]]["pcm_id"]
+        if df.empty:
+            st.info("No records match the current filters.")
+        else:
+            event = st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                column_config={
+                    "pcm_id": st.column_config.TextColumn("ID", width="medium"),
+                    "date": st.column_config.TextColumn("Date", width="small"),
+                    "type_name": st.column_config.TextColumn("Type", width="medium"),
+                    "type_label": st.column_config.TextColumn("Label", width="medium"),
+                    "subject": st.column_config.TextColumn("Subject"),
+                    "blocked": st.column_config.CheckboxColumn("Blocked", width="small"),
+                },
+            )
 
-    # Pagination
-    p_prev, _, p_next = st.columns([1, 4, 1])
-    with p_prev:
-        if st.button("← Prev", disabled=st.session_state.page <= 0, use_container_width=True):
-            st.session_state.page -= 1
-            st.rerun()
-    with p_next:
-        if st.button("Next →", disabled=st.session_state.page >= total_pages - 1, use_container_width=True):
-            st.session_state.page += 1
-            st.rerun()
+            sel_rows = event.selection.rows if event.selection.rows else []
+            if sel_rows:
+                st.session_state.selected_pcm_id = df.iloc[sel_rows[0]]["pcm_id"]
 
-    # Detail panel
-    if st.session_state.selected_pcm_id:
-        st.divider()
-        render_detail(st.session_state.selected_pcm_id)
+        # Pagination
+        p_prev, _, p_next = st.columns([1, 4, 1])
+        with p_prev:
+            if st.button("← Prev", disabled=st.session_state.page <= 0, use_container_width=True):
+                st.session_state.page -= 1
+                st.rerun()
+        with p_next:
+            if st.button("Next →", disabled=st.session_state.page >= total_pages - 1, use_container_width=True):
+                st.session_state.page += 1
+                st.rerun()
+
+        # Detail panel
+        if st.session_state.selected_pcm_id:
+            st.divider()
+            render_detail(st.session_state.selected_pcm_id)
+
+    with errors_tab:
+        render_errors_tab()
 
 
 if __name__ == "__main__":
