@@ -371,9 +371,9 @@ def fetch_page(where_clause: str, params_json: str, page: int) -> list:
         SELECT pcm_id, date, type_name, type_label, subject, blocked
         FROM records
         {where_clause}
-        ORDER BY CASE WHEN date ~ '^\d{2}/\d{2}/\d{4}$'
+        ORDER BY CASE WHEN date ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}$'
                       THEN to_date(date, 'DD/MM/YYYY')
-                 END DESC NULLS LAST, pcm_id
+                 END DESC NULLS LAST, pcm_id DESC
         LIMIT {PAGE_SIZE} OFFSET {offset}
     """
     return query(sql, json.loads(params_json))
