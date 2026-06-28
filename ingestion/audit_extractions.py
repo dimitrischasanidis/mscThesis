@@ -25,7 +25,6 @@ Environment:
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import sys
 from pathlib import Path
@@ -111,8 +110,8 @@ def main() -> None:
         pcm_id = row["pcm_id"]
         q_urls: list[str] = row["question_pdfs"] or []
         a_urls: list[str] = row["answer_pdfs"] or []
-        q_entries: list[dict] = json.loads(row["question_pdf_texts"]) if row["question_pdf_texts"] else []
-        a_entries: list[dict] = json.loads(row["answer_pdf_texts"]) if row["answer_pdf_texts"] else []
+        q_entries: list[dict] = row["question_pdf_texts"] or []
+        a_entries: list[dict] = row["answer_pdf_texts"] or []
 
         all_urls = q_urls + a_urls
         all_entries = q_entries + a_entries
