@@ -560,6 +560,7 @@ def main():
     # Pipeline status
     with st.spinner("Loading pipeline stats…"):
         ps = get_pipeline_stats()
+    disk_scanning = ps.get("files_on_disk") is None
     files_on_disk = ps.get("files_on_disk") or 0
     failed_on_disk = ps.get("failed_on_disk") or 0
     total_urls = int(ps.get("total_pdf_urls") or 0)
@@ -569,28 +570,31 @@ def main():
     pm1.metric("⬇ Pending records", f"{ps.get('pending_download', 0):,}", help="Records where ≥1 PDF is not on disk yet")
     pm2.metric("⚙ Pending extraction", f"{ps.get('pending_extraction', 0):,}", help="Records fully downloaded but text not yet extracted")
     pm3.metric("✓ Extracted records", f"{ps.get('extracted', 0):,}", help="Records with extracted PDF text")
-    pm4.metric("⬇ Pending PDFs", f"{pending_pdfs:,}", help="Individual PDF files not yet downloaded (total URLs − files on disk − failed)")
+    pm4.metric("⬇ Pending PDFs", f"{pending_pdfs:,}" if not disk_scanning else "Scanning…", help="Individual PDF files not yet downloaded (total URLs − files on disk − failed)")
     pm5.metric(
         "📂 Files on disk",
-        f"{files_on_disk:,} / {total_urls:,}" if total_urls else f"{files_on_disk:,}",
+        "Scanning…" if disk_scanning else (f"{files_on_disk:,} / {total_urls:,}" if total_urls else f"{files_on_disk:,}"),
         delta=f"{disk_gb:.1f} GB" if disk_gb else None,
         delta_color="off",
         help="PDF files successfully downloaded to NAS / total unique PDF URLs",
     )
     pm6.metric(
         "✗ Failed PDFs",
-        f"{failed_on_disk:,}",
+        "Scanning…" if disk_scanning else f"{failed_on_disk:,}",
         help="Permanent download failures (.pdf.failed markers on NAS)",
     )
     if total_urls:
         resolved = files_on_disk + failed_on_disk
-        st.progress(
-            min(resolved / total_urls, 1.0),
-            text=(
-                f"Download progress: {resolved / total_urls * 100:.1f}%  "
-                f"({files_on_disk:,} downloaded + {failed_on_disk:,} failed = {resolved:,} of {total_urls:,} PDFs resolved)"
-            ),
-        )
+        if disk_scanning:
+            st.info("NAS scan in progress — download progress will appear shortly.")
+        else:
+            st.progress(
+                min(resolved / total_urls, 1.0),
+                text=(
+                    f"Download progress: {resolved / total_urls * 100:.1f}%  "
+                    f"({files_on_disk:,} downloaded + {failed_on_disk:,} failed = {resolved:,} of {total_urls:,} PDFs resolved)"
+                ),
+            )
     extracted = int(ps.get("extracted") or 0)
     extracted_pdf_count = int(ps.get("extracted_pdf_count") or 0)
     records_with_pdfs = int(ps.get("records_with_pdfs") or 0)
