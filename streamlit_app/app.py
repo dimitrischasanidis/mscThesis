@@ -115,18 +115,22 @@ def get_pipeline_stats() -> dict:
 
     # Count PDF files on disk and sum sizes — NAS mount at /app/static; slow for 200k files, TTL covers it
     try:
-        count, total_bytes = 0, 0
+        count, failed_count, total_bytes = 0, 0, 0
         for f in STATIC_DIR.iterdir():
-            if f.suffix == ".pdf":
+            if f.name.endswith(".pdf.failed"):
+                failed_count += 1
+            elif f.suffix == ".pdf":
                 count += 1
                 try:
                     total_bytes += f.stat().st_size
                 except OSError:
                     pass
         stats["files_on_disk"] = count
+        stats["failed_on_disk"] = failed_count
         stats["disk_bytes"] = total_bytes
     except Exception:
         stats["files_on_disk"] = None
+        stats["failed_on_disk"] = None
         stats["disk_bytes"] = None
 
     return stats
@@ -536,25 +540,35 @@ def main():
     with st.spinner("Loading pipeline stats…"):
         ps = get_pipeline_stats()
     files_on_disk = ps.get("files_on_disk") or 0
+    failed_on_disk = ps.get("failed_on_disk") or 0
     total_urls = int(ps.get("total_pdf_urls") or 0)
     disk_gb = (ps.get("disk_bytes") or 0) / (1024 ** 3)
-    pending_pdfs = max(total_urls - files_on_disk, 0) if total_urls else 0
-    pm1, pm2, pm3, pm4, pm5 = st.columns(5)
+    pending_pdfs = max(total_urls - files_on_disk - failed_on_disk, 0) if total_urls else 0
+    pm1, pm2, pm3, pm4, pm5, pm6 = st.columns(6)
     pm1.metric("⬇ Pending records", f"{ps.get('pending_download', 0):,}", help="Records where ≥1 PDF is not on disk yet")
     pm2.metric("⚙ Pending extraction", f"{ps.get('pending_extraction', 0):,}", help="Records fully downloaded but text not yet extracted")
     pm3.metric("✓ Extracted records", f"{ps.get('extracted', 0):,}", help="Records with extracted PDF text")
-    pm4.metric("⬇ Pending PDFs", f"{pending_pdfs:,}", help="Individual PDF files not yet downloaded (total URLs − files on disk)")
+    pm4.metric("⬇ Pending PDFs", f"{pending_pdfs:,}", help="Individual PDF files not yet downloaded (total URLs − files on disk − failed)")
     pm5.metric(
         "📂 Files on disk",
         f"{files_on_disk:,} / {total_urls:,}" if total_urls else f"{files_on_disk:,}",
         delta=f"{disk_gb:.1f} GB" if disk_gb else None,
         delta_color="off",
-        help="PDF files cached on NAS / total unique PDF URLs",
+        help="PDF files successfully downloaded to NAS / total unique PDF URLs",
+    )
+    pm6.metric(
+        "✗ Failed PDFs",
+        f"{failed_on_disk:,}",
+        help="Permanent download failures (.pdf.failed markers on NAS)",
     )
     if total_urls:
+        resolved = files_on_disk + failed_on_disk
         st.progress(
-            min(files_on_disk / total_urls, 1.0),
-            text=f"Download progress: {files_on_disk / total_urls * 100:.1f}%  ({files_on_disk:,} of {total_urls:,} PDFs)",
+            min(resolved / total_urls, 1.0),
+            text=(
+                f"Download progress: {resolved / total_urls * 100:.1f}%  "
+                f"({files_on_disk:,} downloaded + {failed_on_disk:,} failed = {resolved:,} of {total_urls:,} PDFs resolved)"
+            ),
         )
     extracted = int(ps.get("extracted") or 0)
     extracted_pdf_count = int(ps.get("extracted_pdf_count") or 0)
