@@ -8,6 +8,8 @@ view metadata + extracted text, and preview PDFs inline.
 import hashlib
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -36,6 +38,43 @@ PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = Path("/app/static")
 
 PAGE_SIZE = 25
+
+# ── Disk-scan cache (background thread, refreshes every 5 min) ────────────────
+
+_disk_stats: dict = {"files_on_disk": None, "failed_on_disk": None, "disk_bytes": None}
+_disk_stats_lock = threading.Lock()
+
+
+def _scan_disk() -> None:
+    count, failed, total_bytes = 0, 0, 0
+    try:
+        for f in STATIC_DIR.iterdir():
+            if f.name.endswith(".pdf.failed"):
+                failed += 1
+            elif f.suffix == ".pdf":
+                count += 1
+                try:
+                    total_bytes += f.stat().st_size
+                except OSError:
+                    pass
+        with _disk_stats_lock:
+            _disk_stats.update({"files_on_disk": count, "failed_on_disk": failed, "disk_bytes": total_bytes})
+    except Exception:
+        pass
+
+
+def _disk_scan_loop() -> None:
+    while True:
+        _scan_disk()
+        time.sleep(300)
+
+
+@st.cache_resource(show_spinner=False)
+def _start_disk_scanner() -> threading.Thread:
+    t = threading.Thread(target=_disk_scan_loop, daemon=True)
+    t.start()
+    return t
+
 
 _HEADERS = {
     "User-Agent": (
@@ -112,27 +151,9 @@ def get_pipeline_stats() -> dict:
         FROM records
     """)
     stats = dict(row) if row else {}
-
-    # Count PDF files on disk and sum sizes — NAS mount at /app/static; slow for 200k files, TTL covers it
-    try:
-        count, failed_count, total_bytes = 0, 0, 0
-        for f in STATIC_DIR.iterdir():
-            if f.name.endswith(".pdf.failed"):
-                failed_count += 1
-            elif f.suffix == ".pdf":
-                count += 1
-                try:
-                    total_bytes += f.stat().st_size
-                except OSError:
-                    pass
-        stats["files_on_disk"] = count
-        stats["failed_on_disk"] = failed_count
-        stats["disk_bytes"] = total_bytes
-    except Exception:
-        stats["files_on_disk"] = None
-        stats["failed_on_disk"] = None
-        stats["disk_bytes"] = None
-
+    _start_disk_scanner()
+    with _disk_stats_lock:
+        stats.update(_disk_stats)
     return stats
 
 
