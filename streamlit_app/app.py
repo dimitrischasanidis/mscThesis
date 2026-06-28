@@ -39,10 +39,13 @@ STATIC_DIR = Path("/app/static")
 
 PAGE_SIZE = 25
 
-# ── Disk-scan cache (background thread, refreshes every 5 min) ────────────────
+# ── Disk-scan cache (background thread → Postgres, refreshes every 5 min) ─────
 
-_disk_stats: dict = {"files_on_disk": None, "failed_on_disk": None, "disk_bytes": None}
-_disk_stats_lock = threading.Lock()
+_UPSERT_CACHE = """
+INSERT INTO pipeline_cache (key, int_value, updated_at)
+VALUES (%s, %s, now())
+ON CONFLICT (key) DO UPDATE SET int_value = EXCLUDED.int_value, updated_at = now()
+"""
 
 
 def _scan_disk() -> None:
@@ -57,8 +60,13 @@ def _scan_disk() -> None:
                     total_bytes += f.stat().st_size
                 except OSError:
                     pass
-        with _disk_stats_lock:
-            _disk_stats.update({"files_on_disk": count, "failed_on_disk": failed, "disk_bytes": total_bytes})
+        conn = psycopg2.connect(PG_DSN)
+        with conn.cursor() as cur:
+            cur.execute(_UPSERT_CACHE, ("files_on_disk", count))
+            cur.execute(_UPSERT_CACHE, ("failed_on_disk", failed))
+            cur.execute(_UPSERT_CACHE, ("disk_bytes", total_bytes))
+        conn.commit()
+        conn.close()
     except Exception:
         pass
 
@@ -152,8 +160,9 @@ def get_pipeline_stats() -> dict:
     """)
     stats = dict(row) if row else {}
     _start_disk_scanner()
-    with _disk_stats_lock:
-        stats.update(_disk_stats)
+    cache_rows = query("SELECT key, int_value FROM pipeline_cache WHERE key IN ('files_on_disk','failed_on_disk','disk_bytes')")
+    for r in cache_rows:
+        stats[r["key"]] = r["int_value"]
     return stats
 
 
